@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>TaskFlow</title>
+
+    <link rel="stylesheet" href="style.css">
+
+    <!-- Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+
+<body>
+
+    <!-- ============================= -->
+    <!-- LOGIN SCREEN -->
+    <!-- ============================= -->
+
+    <section id="loginPage" class="login-page">
+
+        <div class="login-box">
+
+            <div class="logo">
+                TASK<span>FLOW</span>
+            </div>
+
+            <p class="login-subtitle">
+                Employee Task Portal
+            </p>
+
+            <form id="loginForm">
+
+                <label>Email</label>
+
+                <input
+                    type="email"
+                    id="email"
+                    placeholder="Enter your email"
+                    required
+                >
+
+                <label>Password</label>
+
+                <input
+                    type="password"
+                    id="password"
+                    placeholder="Enter your password"
+                    required
+                >
+
+                <button type="submit" class="primary-button">
+                    Login
+                </button>
+
+            </form>
+
+            <p id="loginError" class="error-message"></p>
+
+        </div>
+
+    </section>
+
+
+    <!-- ============================= -->
+    <!-- MAIN APPLICATION -->
+    <!-- ============================= -->
+
+    <section id="appPage" class="hidden">
+
+        <header>
+
+            <div class="header-logo">
+                TASK<span>FLOW</span>
+            </div>
+
+            <div class="header-right">
+
+                <span id="userName"></span>
+
+                <span id="userRole" class="role-badge"></span>
+
+                <button id="logoutButton" class="logout-button">
+                    Logout
+                </button>
+
+            </div>
+
+        </header>
+
+
+        <main>
+
+            <!-- EMPLOYEE AREA -->
+
+            <div id="employeeSection">
+
+                <div class="page-title">
+
+                    <div>
+                        <h1>My Tasks</h1>
+
+                        <p>
+                            Manage your tasks and track your progress.
+                        </p>
+                    </div>
+
+                    <button
+                        class="primary-button"
+                        onclick="openTaskModal()"
+                    >
+                        + Add Task
+                    </button>
+
+                </div>
+
+
+                <div id="employeeTasks"></div>
+
+            </div>
+
+
+            <!-- OWNER AREA -->
+
+            <div id="ownerSection" class="hidden">
+
+                <div class="page-title">
+
+                    <div>
+                        <h1>Owner Dashboard</h1>
+
+                        <p>
+                            View and manage employee tasks.
+                        </p>
+                    </div>
+
+                </div>
+
+
+                <div class="owner-layout">
+
+                    <aside class="employee-list">
+
+                        <h3>Employees</h3>
+
+                        <input
+                            type="text"
+                            id="employeeSearch"
+                            placeholder="Search employee..."
+                        >
+
+                        <div id="employees"></div>
+
+                    </aside>
+
+
+                    <section class="employee-tasks-area">
+
+                        <div id="selectedEmployeeHeader">
+
+                            <h2>
+                                Select an employee
+                            </h2>
+
+                            <p>
+                                Choose an employee from the list.
+                            </p>
+
+                        </div>
+
+                        <button
+                            id="ownerAddTaskButton"
+                            class="primary-button hidden"
+                            onclick="openOwnerTaskModal()"
+                        >
+                            + Add Task
+                        </button>
+
+                        <div id="ownerTasks"></div>
+
+                    </section>
+
+                </div>
+
+            </div>
+
+        </main>
+
+    </section>
+
+
+    <!-- ============================= -->
+    <!-- TASK MODAL -->
+    <!-- ============================= -->
+
+    <div id="taskModal" class="modal hidden">
+
+        <div class="modal-box">
+
+            <div class="modal-header">
+
+                <h2>Add Task</h2>
+
+                <button onclick="closeTaskModal()">
+                    ×
+                </button>
+
+            </div>
+
+            <form id="taskForm">
+
+                <label>Task</label>
+
+                <input
+                    type="text"
+                    id="taskTitle"
+                    placeholder="Enter task..."
+                    required
+                >
+
+
+                <label>Date</label>
+
+                <input
+                    type="date"
+                    id="taskDate"
+                    required
+                >
+
+
+                <button
+                    type="submit"
+                    class="primary-button"
+                >
+                    Add Task
+                </button>
+
+            </form>
+
+        </div>
+
+    </div>
+
+
+    <!-- OWNER TASK MODAL -->
+
+    <div id="ownerTaskModal" class="modal hidden">
+
+        <div class="modal-box">
+
+            <div class="modal-header">
+
+                <h2>Add Task</h2>
+
+                <button onclick="closeOwnerTaskModal()">
+                    ×
+                </button>
+
+            </div>
+
+            <form id="ownerTaskForm">
+
+                <label>Task</label>
+
+                <input
+                    type="text"
+                    id="ownerTaskTitle"
+                    placeholder="Enter task..."
+                    required
+                >
+
+
+                <label>Date</label>
+
+                <input
+                    type="date"
+                    id="ownerTaskDate"
+                    required
+                >
+
+
+                <button
+                    type="submit"
+                    class="primary-button"
+                >
+                    Add Task
+                </button>
+
+            </form>
+
+        </div>
+
+    </div>
+
+
+    <script src="app.js"></script>
+
+</body>
+
+</html>
