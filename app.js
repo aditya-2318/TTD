@@ -15,700 +15,1063 @@ const supabaseClient = supabase.createClient(
 );
 
 
-// =====================================================
+
+// ============================================================
 // GLOBAL VARIABLES
-// =====================================================
+// ============================================================
 
 let currentUser = null;
 let currentProfile = null;
 
-let employees = [];
+let currentTasks = [];
 let selectedEmployee = null;
+let ownerEmployees = [];
 
 
-// =====================================================
-// PAGE ELEMENTS
-// =====================================================
+// ============================================================
+// DOM ELEMENTS
+// ============================================================
 
 const loginPage = document.getElementById("loginPage");
 const appPage = document.getElementById("appPage");
 
-const employeeSection = document.getElementById("employeeSection");
-const ownerSection = document.getElementById("ownerSection");
-
-const employeeTasks = document.getElementById("employeeTasks");
-const ownerTasks = document.getElementById("ownerTasks");
+const loginForm = document.getElementById("loginForm");
+const emailInput = document.getElementById("email");
+const passwordInput = document.getElementById("password");
+const loginError = document.getElementById("loginError");
 
 const userName = document.getElementById("userName");
 const userRole = document.getElementById("userRole");
+const logoutBtn = document.getElementById("logoutBtn");
+
+const employeeSection = document.getElementById("employeeSection");
+const ownerSection = document.getElementById("ownerSection");
+
+const myTasksContainer = document.getElementById("myTasksContainer");
+
+const employeeSearch = document.getElementById("employeeSearch");
+const employeeList = document.getElementById("employeeList");
+const selectedEmployeeName = document.getElementById("selectedEmployeeName");
+const ownerTasksContainer = document.getElementById("ownerTasksContainer");
+
+const taskModal = document.getElementById("taskModal");
+const taskForm = document.getElementById("taskForm");
+const taskTitleInput = document.getElementById("taskTitle");
+const taskDateInput = document.getElementById("taskDate");
+const closeModalBtn = document.getElementById("closeModal");
+
+const ownerTaskModal = document.getElementById("ownerTaskModal");
+const ownerTaskForm = document.getElementById("ownerTaskForm");
+const ownerTaskTitleInput = document.getElementById("ownerTaskTitle");
+const ownerTaskDateInput = document.getElementById("ownerTaskDate");
+const closeOwnerModalBtn = document.getElementById("closeOwnerModal");
 
 
-// =====================================================
-// INITIALISE APP
-// =====================================================
+// ============================================================
+// APPLICATION INITIALIZATION
+// ============================================================
 
-async function init() {
+document.addEventListener("DOMContentLoaded", async () => {
 
     const {
-        data: {
-            session
-        }
+        data: { session }
     } = await supabaseClient.auth.getSession();
 
+    if (session) {
+        currentUser = session.user;
+        await loadUserProfile();
+    } else {
+        showLogin();
+    }
+});
+
+
+// ============================================================
+// AUTH STATE LISTENER
+// ============================================================
+
+supabaseClient.auth.onAuthStateChange(async (event, session) => {
 
     if (session) {
-
         currentUser = session.user;
 
         await loadUserProfile();
-
     } else {
+        currentUser = null;
+        currentProfile = null;
 
         showLogin();
-
     }
-}
+});
 
 
-init();
-
-
-// =====================================================
-// AUTH STATE
-// =====================================================
-
-supabaseClient.auth.onAuthStateChange(
-    async (event, session) => {
-
-        if (session) {
-
-            currentUser = session.user;
-
-            await loadUserProfile();
-
-        } else {
-
-            currentUser = null;
-
-            currentProfile = null;
-
-            showLogin();
-
-        }
-
-    }
-);
-
-
-// =====================================================
+// ============================================================
 // LOGIN
-// =====================================================
+// ============================================================
 
-document
-    .getElementById("loginForm")
-    .addEventListener("submit", async (event) => {
+if (loginForm) {
+
+    loginForm.addEventListener("submit", async (event) => {
 
         event.preventDefault();
 
+        loginError.textContent = "";
 
-        const email =
-            document.getElementById("email").value.trim();
+        const email = emailInput.value.trim();
+        const password = passwordInput.value;
 
-        const password =
-            document.getElementById("password").value;
+        if (!email || !password) {
+            loginError.textContent = "Please enter your email and password.";
+            return;
+        }
 
-
-        const errorElement =
-            document.getElementById("loginError");
-
-
-        errorElement.textContent = "";
-
-
-        const {
-            data,
-            error
-        } = await supabaseClient.auth.signInWithPassword({
-
-            email: email,
-
-            password: password
-
-        });
-
+        const { data, error } =
+            await supabaseClient.auth.signInWithPassword({
+                email: email,
+                password: password
+            });
 
         if (error) {
 
-            errorElement.textContent =
-                "Invalid email or password.";
+            console.error("Login error:", error);
+
+            loginError.textContent =
+                error.message || "Invalid email or password.";
 
             return;
-
         }
-
 
         currentUser = data.user;
 
+        await loadUserProfile();
     });
+}
 
 
-// =====================================================
+// ============================================================
 // LOAD USER PROFILE
-// =====================================================
+// ============================================================
 
 async function loadUserProfile() {
 
-    const {
-        data,
-        error
-    } = await supabaseClient
-        .from("profiles")
-        .select("*")
-        .eq("id", currentUser.id)
-        .single();
+    if (!currentUser) {
+        return;
+    }
 
+    console.log("Logged-in user ID:", currentUser.id);
+    console.log("Logged-in email:", currentUser.email);
+
+    const { data, error } = await supabaseClient
+        .from("profiles")
+        .select("id, full_name, role")
+        .eq("id", currentUser.id)
+        .maybeSingle();
+
+    console.log("Profile data:", data);
+    console.log("Profile error:", error);
 
     if (error) {
 
-        console.error(error);
+        console.error("PROFILE QUERY FAILED:", error);
 
         alert(
-            "Your account exists but no profile has been created."
+            "Profile query failed:\n\n" +
+            error.message
         );
 
         await supabaseClient.auth.signOut();
 
         return;
-
     }
 
+    if (!data) {
+
+        console.error(
+            "No profile found for UUID:",
+            currentUser.id
+        );
+
+        alert(
+            "No profile was found for this account.\n\n" +
+            "User ID:\n" +
+            currentUser.id
+        );
+
+        await supabaseClient.auth.signOut();
+
+        return;
+    }
 
     currentProfile = data;
 
+    console.log(
+        "Profile loaded successfully:",
+        currentProfile
+    );
 
-    userName.textContent =
-        currentProfile.full_name;
-
-    userRole.textContent =
-        currentProfile.role.toUpperCase();
-
+    userName.textContent = currentProfile.full_name;
+    userRole.textContent = currentProfile.role.toUpperCase();
 
     loginPage.classList.add("hidden");
-
     appPage.classList.remove("hidden");
 
 
-    if (currentProfile.role === "owner") {
+    // --------------------------------------------------------
+    // EMPLOYEE
+    // --------------------------------------------------------
 
-        employeeSection.classList.add("hidden");
-
-        ownerSection.classList.remove("hidden");
-
-        await loadEmployees();
-
-    } else {
+    if (currentProfile.role === "employee") {
 
         employeeSection.classList.remove("hidden");
-
         ownerSection.classList.add("hidden");
 
         await loadMyTasks();
 
+        return;
     }
 
+
+    // --------------------------------------------------------
+    // OWNER
+    // --------------------------------------------------------
+
+    if (currentProfile.role === "owner") {
+
+        employeeSection.classList.add("hidden");
+        ownerSection.classList.remove("hidden");
+
+        await loadEmployees();
+
+        return;
+    }
 }
 
 
-// =====================================================
+// ============================================================
 // SHOW LOGIN
-// =====================================================
+// ============================================================
 
 function showLogin() {
 
-    loginPage.classList.remove("hidden");
+    if (loginPage) {
+        loginPage.classList.remove("hidden");
+    }
 
-    appPage.classList.add("hidden");
-
+    if (appPage) {
+        appPage.classList.add("hidden");
+    }
 }
 
 
-// =====================================================
+// ============================================================
 // LOGOUT
-// =====================================================
+// ============================================================
 
-document
-    .getElementById("logoutButton")
-    .addEventListener("click", async () => {
+if (logoutBtn) {
+
+    logoutBtn.addEventListener("click", async () => {
 
         await supabaseClient.auth.signOut();
 
+        currentUser = null;
+        currentProfile = null;
+        currentTasks = [];
+        selectedEmployee = null;
     });
+}
 
 
-// =====================================================
-// LOAD EMPLOYEE TASKS
-// =====================================================
+// ============================================================
+// ============================================================
+// WORKING DAY / OVERDUE LOGIC
+// ============================================================
+// ============================================================
+
+/*
+    WORKING DAYS:
+
+    Monday      = Working
+    Tuesday     = Working
+    Wednesday   = Working
+    Thursday    = Working
+    Friday      = Working
+
+    Saturday:
+        1st Saturday = Non-working
+        2nd Saturday = Working
+        3rd Saturday = Non-working
+        4th Saturday = Working
+        5th Saturday = Non-working
+
+    Sunday = Non-working
+*/
+
+
+// ------------------------------------------------------------
+// CHECK IF DATE IS A WORKING DAY
+// ------------------------------------------------------------
+
+function isWorkingDay(date) {
+
+    const day = date.getDay();
+
+    // Monday - Friday
+    if (day >= 1 && day <= 5) {
+        return true;
+    }
+
+    // Sunday
+    if (day === 0) {
+        return false;
+    }
+
+    // Saturday
+    if (day === 6) {
+
+        const dateOfMonth = date.getDate();
+
+        // 1st, 2nd, 3rd, 4th or 5th Saturday
+        const saturdayNumber =
+            Math.ceil(dateOfMonth / 7);
+
+        // Only 2nd and 4th Saturday are working
+        return (
+            saturdayNumber === 2 ||
+            saturdayNumber === 4
+        );
+    }
+
+    return false;
+}
+
+
+// ------------------------------------------------------------
+// COUNT WORKING DAYS SINCE TASK DATE
+// ------------------------------------------------------------
+
+function getWorkingDaysPending(taskDateString) {
+
+    const taskDate =
+        new Date(taskDateString + "T00:00:00");
+
+    const today = new Date();
+
+    taskDate.setHours(0, 0, 0, 0);
+    today.setHours(0, 0, 0, 0);
+
+    let currentDate = new Date(taskDate);
+
+    let workingDays = 0;
+
+    // Start counting from the day AFTER the task date
+    currentDate.setDate(
+        currentDate.getDate() + 1
+    );
+
+    while (currentDate <= today) {
+
+        if (isWorkingDay(currentDate)) {
+            workingDays++;
+        }
+
+        currentDate.setDate(
+            currentDate.getDate() + 1
+        );
+    }
+
+    return workingDays;
+}
+
+
+// ------------------------------------------------------------
+// CHECK IF TASK IS OVERDUE
+// ------------------------------------------------------------
+
+function isTaskOverdue(task) {
+
+    // Completed tasks are never overdue
+    if (task.completed) {
+        return false;
+    }
+
+    const workingDaysPending =
+        getWorkingDaysPending(task.task_date);
+
+    return workingDaysPending >= 3;
+}
+
+
+// ============================================================
+// TASK STATUS HELPERS
+// ============================================================
+
+function getTaskStatus(task) {
+
+    if (task.completed) {
+        return "completed";
+    }
+
+    if (isTaskOverdue(task)) {
+        return "overdue";
+    }
+
+    return "pending";
+}
+
+
+// ============================================================
+// EMPLOYEE - LOAD MY TASKS
+// ============================================================
 
 async function loadMyTasks() {
 
-    const {
-        data,
-        error
-    } = await supabaseClient
+    const { data, error } = await supabaseClient
         .from("tasks")
         .select("*")
         .eq("user_id", currentUser.id)
         .order("task_date", {
+            ascending: false
+        })
+        .order("created_at", {
             ascending: true
         });
 
-
     if (error) {
 
-        console.error(error);
+        console.error("Error loading tasks:", error);
+
+        myTasksContainer.innerHTML = `
+            <p class="error-message">
+                Unable to load your tasks.
+            </p>
+        `;
 
         return;
-
     }
 
+    currentTasks = data || [];
 
     renderTasks(
-        data,
-        employeeTasks
+        currentTasks,
+        myTasksContainer,
+        true
     );
-
 }
 
 
-// =====================================================
+// ============================================================
 // RENDER TASKS
-// =====================================================
+// ============================================================
 
-function renderTasks(tasks, container) {
+function renderTasks(
+    tasks,
+    container,
+    allowCompletion
+) {
 
     container.innerHTML = "";
-
 
     if (!tasks || tasks.length === 0) {
 
         container.innerHTML = `
-            <div class="task-day">
-                <div class="task-list">
-                    <p style="padding:20px;color:#777;">
-                        No tasks found.
-                    </p>
-                </div>
+            <div class="empty-state">
+                <p>No tasks found.</p>
             </div>
         `;
 
         return;
-
     }
 
 
-    // Group tasks by date
+    // --------------------------------------------------------
+    // GROUP TASKS BY DATE
+    // --------------------------------------------------------
 
-    const grouped = {};
-
+    const groupedTasks = {};
 
     tasks.forEach(task => {
 
-        if (!grouped[task.task_date]) {
-
-            grouped[task.task_date] = [];
-
+        if (!groupedTasks[task.task_date]) {
+            groupedTasks[task.task_date] = [];
         }
 
-        grouped[task.task_date].push(task);
-
+        groupedTasks[task.task_date].push(task);
     });
 
 
-    Object.keys(grouped)
-        .sort()
-        .forEach(date => {
+    // --------------------------------------------------------
+    // SORT DATES - NEWEST FIRST
+    // --------------------------------------------------------
+
+    const sortedDates =
+        Object.keys(groupedTasks).sort(
+            (a, b) =>
+                new Date(b) - new Date(a)
+        );
 
 
-            const dayTasks =
-                grouped[date];
+    sortedDates.forEach(date => {
+
+        const dayCard =
+            document.createElement("div");
+
+        dayCard.className = "task-day-card";
 
 
-            // Pending first
-            // Completed afterwards
+        // ----------------------------------------------------
+        // DATE HEADER
+        // ----------------------------------------------------
 
-            dayTasks.sort(
-                (a, b) =>
-                    Number(a.completed) -
-                    Number(b.completed)
-            );
+        const dateHeader =
+            document.createElement("div");
 
+        dateHeader.className = "task-day-header";
 
-            const dayElement =
-                document.createElement("div");
+        dateHeader.textContent =
+            formatDate(date);
 
-
-            dayElement.className =
-                "task-day";
+        dayCard.appendChild(dateHeader);
 
 
-            dayElement.innerHTML = `
+        // ----------------------------------------------------
+        // SORT TASKS
+        // ----------------------------------------------------
+        // Pending + overdue first
+        // Completed tasks afterwards
+        // ----------------------------------------------------
 
-                <div class="task-date">
-                    ${formatDate(date)}
-                </div>
+        const sortedTasks =
+            groupedTasks[date].sort((a, b) => {
 
-                <div class="task-list"></div>
+                const aCompleted =
+                    a.completed;
 
-            `;
+                const bCompleted =
+                    b.completed;
 
+                if (aCompleted && !bCompleted) {
+                    return 1;
+                }
 
-            const taskList =
-                dayElement.querySelector(
-                    ".task-list"
+                if (!aCompleted && bCompleted) {
+                    return -1;
+                }
+
+                return (
+                    new Date(a.created_at) -
+                    new Date(b.created_at)
                 );
-
-
-            dayTasks.forEach(task => {
-
-                const taskElement =
-                    document.createElement("div");
-
-
-                taskElement.className =
-                    "task" +
-                    (task.completed
-                        ? " completed"
-                        : "");
-
-
-                taskElement.innerHTML = `
-
-                    <input
-                        type="checkbox"
-                        class="task-checkbox"
-                        ${task.completed ? "checked" : ""}
-                    >
-
-                    <span class="task-title">
-                        ${escapeHTML(task.title)}
-                    </span>
-
-                `;
-
-
-                const checkbox =
-                    taskElement.querySelector(
-                        ".task-checkbox"
-                    );
-
-
-                checkbox.addEventListener(
-                    "change",
-                    () => toggleTask(
-                        task.id,
-                        checkbox.checked
-                    )
-                );
-
-
-                taskList.appendChild(
-                    taskElement
-                );
-
             });
 
 
-            container.appendChild(
-                dayElement
+        // ----------------------------------------------------
+        // RENDER EACH TASK
+        // ----------------------------------------------------
+
+        sortedTasks.forEach(task => {
+
+            const overdue =
+                isTaskOverdue(task);
+
+            const status =
+                getTaskStatus(task);
+
+
+            const taskItem =
+                document.createElement("div");
+
+            taskItem.className =
+                "task-item";
+
+
+            // ------------------------------------------------
+            // ADD STATUS CLASS
+            // ------------------------------------------------
+
+            if (task.completed) {
+
+                taskItem.classList.add(
+                    "completed"
+                );
+
+            } else if (overdue) {
+
+                taskItem.classList.add(
+                    "overdue"
+                );
+            }
+
+
+            // ------------------------------------------------
+            // TASK CONTENT
+            // ------------------------------------------------
+
+            const taskContent =
+                document.createElement("div");
+
+            taskContent.className =
+                "task-content";
+
+
+            // ------------------------------------------------
+            // CHECKBOX
+            // ------------------------------------------------
+
+            const checkbox =
+                document.createElement("input");
+
+            checkbox.type = "checkbox";
+
+            checkbox.checked =
+                task.completed;
+
+
+            // Overdue tasks cannot be completed
+            if (overdue && !task.completed) {
+
+                checkbox.disabled = true;
+
+                checkbox.title =
+                    "This task can no longer be completed because it has been pending for 3 working days.";
+            }
+
+
+            // Only allow completion when permitted
+            if (
+                allowCompletion &&
+                !task.completed &&
+                !overdue
+            ) {
+
+                checkbox.addEventListener(
+                    "change",
+                    () => {
+                        toggleTask(
+                            task.id,
+                            checkbox.checked
+                        );
+                    }
+                );
+
+            } else {
+
+                checkbox.disabled = true;
+            }
+
+
+            // ------------------------------------------------
+            // TASK TITLE
+            // ------------------------------------------------
+
+            const title =
+                document.createElement("span");
+
+            title.className =
+                "task-title";
+
+            title.textContent =
+                task.title;
+
+
+            // ------------------------------------------------
+            // OVERDUE LABEL
+            // ------------------------------------------------
+
+            if (overdue) {
+
+                const overdueLabel =
+                    document.createElement("span");
+
+                overdueLabel.className =
+                    "overdue-label";
+
+                overdueLabel.textContent =
+                    "OVERDUE";
+
+                title.appendChild(
+                    document.createTextNode(" ")
+                );
+
+                title.appendChild(
+                    overdueLabel
+                );
+            }
+
+
+            taskContent.appendChild(
+                checkbox
             );
 
+            taskContent.appendChild(
+                title
+            );
+
+
+            // ------------------------------------------------
+            // TASK META
+            // ------------------------------------------------
+
+            const taskMeta =
+                document.createElement("div");
+
+            taskMeta.className =
+                "task-meta";
+
+
+            if (overdue) {
+
+                const workingDays =
+                    getWorkingDaysPending(
+                        task.task_date
+                    );
+
+                taskMeta.textContent =
+                    `${workingDays} working days pending`;
+
+            } else if (task.completed) {
+
+                taskMeta.textContent =
+                    "Completed";
+
+            } else {
+
+                taskMeta.textContent =
+                    "Pending";
+            }
+
+
+            taskItem.appendChild(
+                taskContent
+            );
+
+            taskItem.appendChild(
+                taskMeta
+            );
+
+
+            dayCard.appendChild(
+                taskItem
+            );
         });
 
+
+        container.appendChild(
+            dayCard
+        );
+    });
 }
 
 
-// =====================================================
-// TOGGLE TASK
-// =====================================================
+// ============================================================
+// TOGGLE TASK COMPLETION
+// ============================================================
 
 async function toggleTask(
     taskId,
     completed
 ) {
 
-    const {
-        error
-    } = await supabaseClient
-        .from("tasks")
-        .update({
+    // Find task from currently loaded tasks
+    const task =
+        currentTasks.find(
+            t => t.id === taskId
+        );
 
-            completed: completed,
 
-            completed_at:
-                completed
+    if (!task) {
+
+        console.error(
+            "Task not found:",
+            taskId
+        );
+
+        return;
+    }
+
+
+    // --------------------------------------------------------
+    // IMPORTANT:
+    // Prevent overdue tasks from being completed.
+    // --------------------------------------------------------
+
+    if (
+        completed &&
+        isTaskOverdue(task)
+    ) {
+
+        alert(
+            "This task has been pending for 3 working days and can no longer be marked as complete."
+        );
+
+        return;
+    }
+
+
+    const { error } =
+        await supabaseClient
+            .from("tasks")
+            .update({
+                completed: completed,
+                completed_at: completed
                     ? new Date().toISOString()
                     : null
-
-        })
-        .eq("id", taskId);
+            })
+            .eq("id", taskId);
 
 
     if (error) {
 
-        console.error(error);
+        console.error(
+            "Error updating task:",
+            error
+        );
 
         alert(
             "Unable to update task."
         );
 
         return;
-
     }
 
 
-    if (
-        currentProfile.role ===
-        "owner"
-    ) {
-
-        await loadSelectedEmployeeTasks();
-
-    } else {
-
-        await loadMyTasks();
-
-    }
-
+    await loadMyTasks();
 }
 
 
-// =====================================================
-// ADD EMPLOYEE TASK
-// =====================================================
+// ============================================================
+// EMPLOYEE - OPEN ADD TASK MODAL
+// ============================================================
 
-document
-    .getElementById("taskForm")
-    .addEventListener(
+const addTaskBtn =
+    document.getElementById("addTaskBtn");
+
+if (addTaskBtn) {
+
+    addTaskBtn.addEventListener(
+        "click",
+        () => {
+
+            taskTitleInput.value = "";
+
+            taskDateInput.value =
+                getTodayDate();
+
+            taskModal.classList.remove(
+                "hidden"
+            );
+        }
+    );
+}
+
+
+// ============================================================
+// EMPLOYEE - CLOSE TASK MODAL
+// ============================================================
+
+if (closeModalBtn) {
+
+    closeModalBtn.addEventListener(
+        "click",
+        () => {
+
+            taskModal.classList.add(
+                "hidden"
+            );
+        }
+    );
+}
+
+
+// ============================================================
+// EMPLOYEE - ADD TASK
+// ============================================================
+
+if (taskForm) {
+
+    taskForm.addEventListener(
         "submit",
         async event => {
 
             event.preventDefault();
 
-
             const title =
-                document
-                    .getElementById("taskTitle")
-                    .value
-                    .trim();
-
+                taskTitleInput.value.trim();
 
             const date =
-                document
-                    .getElementById("taskDate")
-                    .value;
+                taskDateInput.value;
 
 
             if (!title || !date) {
 
-                return;
+                alert(
+                    "Please enter a task and date."
+                );
 
+                return;
             }
 
 
-            const {
-                error
-            } = await supabaseClient
-                .from("tasks")
-                .insert({
-
-                    user_id:
-                        currentUser.id,
-
-                    title: title,
-
-                    task_date: date,
-
-                    created_by:
-                        currentUser.id
-
-                });
+            const { error } =
+                await supabaseClient
+                    .from("tasks")
+                    .insert({
+                        user_id: currentUser.id,
+                        title: title,
+                        task_date: date,
+                        completed: false,
+                        created_by: currentUser.id
+                    });
 
 
             if (error) {
 
-                console.error(error);
+                console.error(
+                    "Error adding task:",
+                    error
+                );
 
                 alert(
                     "Unable to add task."
                 );
 
                 return;
-
             }
 
 
-            closeTaskModal();
-
-
-            document
-                .getElementById("taskForm")
-                .reset();
+            taskModal.classList.add(
+                "hidden"
+            );
 
 
             await loadMyTasks();
-
         }
     );
-
-
-// =====================================================
-// MODAL
-// =====================================================
-
-function openTaskModal() {
-
-    document
-        .getElementById("taskModal")
-        .classList
-        .remove("hidden");
-
-
-    document
-        .getElementById("taskDate")
-        .value =
-        getToday();
-
 }
 
 
-function closeTaskModal() {
-
-    document
-        .getElementById("taskModal")
-        .classList
-        .add("hidden");
-
-}
-
-
-// =====================================================
-// OWNER: LOAD EMPLOYEES
-// =====================================================
+// ============================================================
+// OWNER - LOAD EMPLOYEES
+// ============================================================
 
 async function loadEmployees() {
 
-    const {
-        data,
-        error
-    } = await supabaseClient
-        .from("profiles")
-        .select("*")
-        .eq("role", "employee")
-        .order("full_name");
+    const { data, error } =
+        await supabaseClient
+            .from("profiles")
+            .select(
+                "id, full_name, role"
+            )
+            .eq("role", "employee")
+            .order("full_name", {
+                ascending: true
+            });
 
 
     if (error) {
 
-        console.error(error);
+        console.error(
+            "Error loading employees:",
+            error
+        );
+
+        employeeList.innerHTML = `
+            <p class="error-message">
+                Unable to load employees.
+            </p>
+        `;
 
         return;
-
     }
 
 
-    employees = data || [];
+    ownerEmployees =
+        data || [];
 
-    renderEmployees(employees);
-
+    renderEmployees(
+        ownerEmployees
+    );
 }
 
 
-// =====================================================
-// OWNER: RENDER EMPLOYEES
-// =====================================================
+// ============================================================
+// OWNER - RENDER EMPLOYEES
+// ============================================================
 
-function renderEmployees(list) {
+function renderEmployees(
+    employees
+) {
 
-    const container =
-        document.getElementById(
-            "employees"
-        );
-
-
-    container.innerHTML = "";
+    employeeList.innerHTML = "";
 
 
-    list.forEach(employee => {
+    if (!employees.length) {
 
-        const element =
-            document.createElement("div");
-
-
-        element.className =
-            "employee-item";
-
-
-        if (
-            selectedEmployee &&
-            selectedEmployee.id === employee.id
-        ) {
-
-            element.classList.add(
-                "active"
-            );
-
-        }
-
-
-        element.innerHTML = `
-
-            <div class="employee-name">
-                ${escapeHTML(employee.full_name)}
-            </div>
-
-            <div class="employee-role">
-                Employee
-            </div>
-
+        employeeList.innerHTML = `
+            <p class="empty-state">
+                No employees found.
+            </p>
         `;
 
+        return;
+    }
 
-        element.addEventListener(
+
+    employees.forEach(employee => {
+
+        const employeeItem =
+            document.createElement("button");
+
+        employeeItem.className =
+            "employee-item";
+
+        employeeItem.textContent =
+            employee.full_name;
+
+
+        employeeItem.addEventListener(
             "click",
-            () => selectEmployee(employee)
+            async () => {
+
+                selectedEmployee =
+                    employee;
+
+                selectedEmployeeName.textContent =
+                    employee.full_name;
+
+                await loadEmployeeTasks(
+                    employee.id
+                );
+            }
         );
 
 
-        container.appendChild(
-            element
+        employeeList.appendChild(
+            employeeItem
         );
-
     });
-
 }
 
 
-// =====================================================
-// OWNER: SEARCH
-// =====================================================
+// ============================================================
+// OWNER - SEARCH EMPLOYEES
+// ============================================================
 
-document
-    .getElementById("employeeSearch")
-    .addEventListener(
+if (employeeSearch) {
+
+    employeeSearch.addEventListener(
         "input",
-        event => {
+        () => {
 
             const search =
-                event.target.value
-                    .toLowerCase()
-                    .trim();
+                employeeSearch.value
+                    .trim()
+                    .toLowerCase();
 
 
             const filtered =
-                employees.filter(
+                ownerEmployees.filter(
                     employee =>
-                        employee
-                            .full_name
+                        employee.full_name
                             .toLowerCase()
                             .includes(search)
                 );
@@ -717,110 +1080,120 @@ document
             renderEmployees(
                 filtered
             );
-
         }
     );
-
-
-// =====================================================
-// OWNER: SELECT EMPLOYEE
-// =====================================================
-
-async function selectEmployee(
-    employee
-) {
-
-    selectedEmployee =
-        employee;
-
-
-    renderEmployees(
-        employees
-    );
-
-
-    document
-        .getElementById(
-            "selectedEmployeeHeader"
-        )
-        .innerHTML = `
-
-            <h2>
-                ${escapeHTML(employee.full_name)}
-            </h2>
-
-            <p>
-                Employee task list
-            </p>
-
-        `;
-
-
-    document
-        .getElementById(
-            "ownerAddTaskButton"
-        )
-        .classList
-        .remove("hidden");
-
-
-    await loadSelectedEmployeeTasks();
-
 }
 
 
-// =====================================================
-// OWNER: LOAD SELECTED EMPLOYEE TASKS
-// =====================================================
+// ============================================================
+// OWNER - LOAD EMPLOYEE TASKS
+// ============================================================
 
-async function loadSelectedEmployeeTasks() {
+async function loadEmployeeTasks(
+    employeeId
+) {
 
-    if (!selectedEmployee) {
-
-        return;
-
-    }
-
-
-    const {
-        data,
-        error
-    } = await supabaseClient
-        .from("tasks")
-        .select("*")
-        .eq(
-            "user_id",
-            selectedEmployee.id
-        )
-        .order("task_date", {
-            ascending: true
-        });
+    const { data, error } =
+        await supabaseClient
+            .from("tasks")
+            .select("*")
+            .eq("user_id", employeeId)
+            .order("task_date", {
+                ascending: false
+            })
+            .order("created_at", {
+                ascending: true
+            });
 
 
     if (error) {
 
-        console.error(error);
+        console.error(
+            "Error loading employee tasks:",
+            error
+        );
+
+        ownerTasksContainer.innerHTML = `
+            <p class="error-message">
+                Unable to load employee tasks.
+            </p>
+        `;
 
         return;
-
     }
 
 
     renderTasks(
-        data,
-        ownerTasks
+        data || [],
+        ownerTasksContainer,
+        false
     );
-
 }
 
 
-// =====================================================
-// OWNER: ADD TASK
-// =====================================================
+// ============================================================
+// OWNER - OPEN ADD TASK MODAL
+// ============================================================
 
-document
-    .getElementById("ownerTaskForm")
-    .addEventListener(
+const addOwnerTaskBtn =
+    document.getElementById(
+        "addOwnerTaskBtn"
+    );
+
+if (addOwnerTaskBtn) {
+
+    addOwnerTaskBtn.addEventListener(
+        "click",
+        () => {
+
+            if (!selectedEmployee) {
+
+                alert(
+                    "Please select an employee first."
+                );
+
+                return;
+            }
+
+
+            ownerTaskTitleInput.value = "";
+
+            ownerTaskDateInput.value =
+                getTodayDate();
+
+            ownerTaskModal.classList.remove(
+                "hidden"
+            );
+        }
+    );
+}
+
+
+// ============================================================
+// OWNER - CLOSE ADD TASK MODAL
+// ============================================================
+
+if (closeOwnerModalBtn) {
+
+    closeOwnerModalBtn.addEventListener(
+        "click",
+        () => {
+
+            ownerTaskModal.classList.add(
+                "hidden"
+            );
+        }
+    );
+}
+
+
+// ============================================================
+// OWNER - ADD TASK FOR EMPLOYEE
+// ============================================================
+
+if (ownerTaskForm) {
+
+    ownerTaskForm.addEventListener(
         "submit",
         async event => {
 
@@ -829,124 +1202,87 @@ document
 
             if (!selectedEmployee) {
 
-                return;
+                alert(
+                    "Please select an employee first."
+                );
 
+                return;
             }
 
 
             const title =
-                document
-                    .getElementById(
-                        "ownerTaskTitle"
-                    )
-                    .value
-                    .trim();
-
+                ownerTaskTitleInput.value.trim();
 
             const date =
-                document
-                    .getElementById(
-                        "ownerTaskDate"
-                    )
-                    .value;
+                ownerTaskDateInput.value;
 
 
-            const {
-                error
-            } = await supabaseClient
-                .from("tasks")
-                .insert({
+            if (!title || !date) {
 
-                    user_id:
-                        selectedEmployee.id,
+                alert(
+                    "Please enter a task and date."
+                );
 
-                    title: title,
+                return;
+            }
 
-                    task_date: date,
 
-                    created_by:
-                        currentUser.id
+            const { error } =
+                await supabaseClient
+                    .from("tasks")
+                    .insert({
+                        user_id:
+                            selectedEmployee.id,
 
-                });
+                        title:
+                            title,
+
+                        task_date:
+                            date,
+
+                        completed:
+                            false,
+
+                        created_by:
+                            currentUser.id
+                    });
 
 
             if (error) {
 
-                console.error(error);
+                console.error(
+                    "Error adding owner task:",
+                    error
+                );
 
                 alert(
                     "Unable to add task."
                 );
 
                 return;
-
             }
 
 
-            closeOwnerTaskModal();
+            ownerTaskModal.classList.add(
+                "hidden"
+            );
 
 
-            document
-                .getElementById(
-                    "ownerTaskForm"
-                )
-                .reset();
-
-
-            await loadSelectedEmployeeTasks();
-
+            await loadEmployeeTasks(
+                selectedEmployee.id
+            );
         }
     );
-
-
-// =====================================================
-// OWNER MODAL
-// =====================================================
-
-function openOwnerTaskModal() {
-
-    if (!selectedEmployee) {
-
-        return;
-
-    }
-
-
-    document
-        .getElementById(
-            "ownerTaskModal"
-        )
-        .classList
-        .remove("hidden");
-
-
-    document
-        .getElementById(
-            "ownerTaskDate"
-        )
-        .value =
-        getToday();
-
 }
 
 
-function closeOwnerTaskModal() {
+// ============================================================
+// FORMAT DATE
+// ============================================================
 
-    document
-        .getElementById(
-            "ownerTaskModal"
-        )
-        .classList
-        .add("hidden");
-
-}
-
-
-// =====================================================
-// DATE FORMAT
-// =====================================================
-
-function formatDate(dateString) {
+function formatDate(
+    dateString
+) {
 
     const date =
         new Date(
@@ -963,46 +1299,53 @@ function formatDate(dateString) {
             year: "numeric"
         }
     );
-
 }
 
 
-// =====================================================
-// TODAY
-// =====================================================
+// ============================================================
+// GET TODAY'S DATE
+// ============================================================
 
-function getToday() {
+function getTodayDate() {
 
-    const date =
+    const today =
         new Date();
 
 
     const year =
-        date.getFullYear();
+        today.getFullYear();
 
 
     const month =
         String(
-            date.getMonth() + 1
+            today.getMonth() + 1
         ).padStart(2, "0");
 
 
     const day =
         String(
-            date.getDate()
+            today.getDate()
         ).padStart(2, "0");
 
 
     return `${year}-${month}-${day}`;
-
 }
 
 
-// =====================================================
-// SECURITY: ESCAPE HTML
-// =====================================================
+// ============================================================
+// HTML ESCAPING
+// ============================================================
 
-function escapeHTML(value) {
+function escapeHtml(
+    value
+) {
+
+    if (value === null ||
+        value === undefined) {
+
+        return "";
+    }
+
 
     return String(value)
         .replace(
@@ -1025,5 +1368,4 @@ function escapeHTML(value) {
             /'/g,
             "&#039;"
         );
-
 }
