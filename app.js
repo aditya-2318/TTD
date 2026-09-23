@@ -1,19 +1,20 @@
-// =====================================================
-// SUPABASE CONFIGURATION
-// =====================================================
+// ============================================================
+// TASKFLOW - APP.JS
+// ============================================================
 
-// Replace these with your own Supabase values.
+// ============================================================
+// SUPABASE CONFIGURATION
+// ============================================================
 
 const SUPABASE_URL = "https://ltrydfyqapfigudpyuqb.supabase.co";
 
-const SUPABASE_ANON_KEY = "sb_publishable_vsgbQH0Zos3HLGZ7NKDPnA_GysCTtAu";
-
+const SUPABASE_ANON_KEY =
+    "sb_publishable_vsgbQH0Zos3HLGZ7NKDPnA_GysCTtAu";
 
 const supabaseClient = supabase.createClient(
     SUPABASE_URL,
     SUPABASE_ANON_KEY
 );
-
 
 
 // ============================================================
@@ -24,8 +25,11 @@ let currentUser = null;
 let currentProfile = null;
 
 let currentTasks = [];
+
 let selectedEmployee = null;
 let ownerEmployees = [];
+
+let profileLoading = false;
 
 
 // ============================================================
@@ -42,46 +46,104 @@ const loginError = document.getElementById("loginError");
 
 const userName = document.getElementById("userName");
 const userRole = document.getElementById("userRole");
-const logoutBtn = document.getElementById("logoutBtn");
+const logoutBtn = document.getElementById("logoutButton");
 
-const employeeSection = document.getElementById("employeeSection");
-const ownerSection = document.getElementById("ownerSection");
+const employeeSection =
+    document.getElementById("employeeSection");
 
-const myTasksContainer = document.getElementById("myTasksContainer");
+const ownerSection =
+    document.getElementById("ownerSection");
 
-const employeeSearch = document.getElementById("employeeSearch");
-const employeeList = document.getElementById("employeeList");
-const selectedEmployeeName = document.getElementById("selectedEmployeeName");
-const ownerTasksContainer = document.getElementById("ownerTasksContainer");
+const myTasksContainer =
+    document.getElementById("employeeTasks");
 
-const taskModal = document.getElementById("taskModal");
-const taskForm = document.getElementById("taskForm");
-const taskTitleInput = document.getElementById("taskTitle");
-const taskDateInput = document.getElementById("taskDate");
-const closeModalBtn = document.getElementById("closeModal");
+const employeeSearch =
+    document.getElementById("employeeSearch");
 
-const ownerTaskModal = document.getElementById("ownerTaskModal");
-const ownerTaskForm = document.getElementById("ownerTaskForm");
-const ownerTaskTitleInput = document.getElementById("ownerTaskTitle");
-const ownerTaskDateInput = document.getElementById("ownerTaskDate");
-const closeOwnerModalBtn = document.getElementById("closeOwnerModal");
+const employeeList =
+    document.getElementById("employees");
+
+const selectedEmployeeHeader =
+    document.getElementById("selectedEmployeeHeader");
+
+const ownerAddTaskButton =
+    document.getElementById("ownerAddTaskButton");
+
+const ownerTasksContainer =
+    document.getElementById("ownerTasks");
+
+const taskModal =
+    document.getElementById("taskModal");
+
+const taskForm =
+    document.getElementById("taskForm");
+
+const taskTitleInput =
+    document.getElementById("taskTitle");
+
+const taskDateInput =
+    document.getElementById("taskDate");
+
+const ownerTaskModal =
+    document.getElementById("ownerTaskModal");
+
+const ownerTaskForm =
+    document.getElementById("ownerTaskForm");
+
+const ownerTaskTitleInput =
+    document.getElementById("ownerTaskTitle");
+
+const ownerTaskDateInput =
+    document.getElementById("ownerTaskDate");
 
 
 // ============================================================
-// APPLICATION INITIALIZATION
+// INITIALIZATION
 // ============================================================
 
 document.addEventListener("DOMContentLoaded", async () => {
 
-    const {
-        data: { session }
-    } = await supabaseClient.auth.getSession();
+    console.log("TASKFLOW APP LOADED");
 
-    if (session) {
-        currentUser = session.user;
-        await loadUserProfile();
-    } else {
+    if (taskDateInput) {
+        taskDateInput.value = getTodayString();
+    }
+
+    if (ownerTaskDateInput) {
+        ownerTaskDateInput.value = getTodayString();
+    }
+
+    try {
+
+        const {
+            data: { session },
+            error
+        } = await supabaseClient.auth.getSession();
+
+        if (error) {
+            console.error("Session error:", error);
+            showLogin();
+            return;
+        }
+
+        if (session) {
+
+            currentUser = session.user;
+
+            await loadUserProfile();
+
+        } else {
+
+            showLogin();
+
+        }
+
+    } catch (error) {
+
+        console.error("Initialization error:", error);
+
         showLogin();
+
     }
 });
 
@@ -90,19 +152,46 @@ document.addEventListener("DOMContentLoaded", async () => {
 // AUTH STATE LISTENER
 // ============================================================
 
-supabaseClient.auth.onAuthStateChange(async (event, session) => {
+supabaseClient.auth.onAuthStateChange(
+    async (event, session) => {
 
-    if (session) {
-        currentUser = session.user;
+        console.log("Auth event:", event);
 
-        await loadUserProfile();
-    } else {
-        currentUser = null;
-        currentProfile = null;
+        if (event === "SIGNED_OUT") {
 
-        showLogin();
+            currentUser = null;
+            currentProfile = null;
+            selectedEmployee = null;
+            ownerEmployees = [];
+            currentTasks = [];
+
+            showLogin();
+
+            return;
+        }
+
+        if (
+            event === "SIGNED_IN" ||
+            event === "INITIAL_SESSION"
+        ) {
+
+            if (session && session.user) {
+
+                currentUser = session.user;
+
+                // Small delay prevents race conditions between
+                // Supabase auth and profile query.
+                setTimeout(() => {
+
+                    loadUserProfile();
+
+                }, 100);
+
+            }
+
+        }
     }
-});
+);
 
 
 // ============================================================
@@ -111,40 +200,52 @@ supabaseClient.auth.onAuthStateChange(async (event, session) => {
 
 if (loginForm) {
 
-    loginForm.addEventListener("submit", async (event) => {
+    loginForm.addEventListener(
+        "submit",
+        async (event) => {
 
-        event.preventDefault();
+            event.preventDefault();
 
-        loginError.textContent = "";
+            loginError.textContent = "";
 
-        const email = emailInput.value.trim();
-        const password = passwordInput.value;
+            const email =
+                emailInput.value.trim();
 
-        if (!email || !password) {
-            loginError.textContent = "Please enter your email and password.";
-            return;
-        }
+            const password =
+                passwordInput.value;
 
-        const { data, error } =
-            await supabaseClient.auth.signInWithPassword({
+            if (!email || !password) {
+
+                loginError.textContent =
+                    "Please enter your email and password.";
+
+                return;
+            }
+
+            const {
+                data,
+                error
+            } = await supabaseClient.auth.signInWithPassword({
                 email: email,
                 password: password
             });
 
-        if (error) {
+            if (error) {
 
-            console.error("Login error:", error);
+                console.error("Login error:", error);
 
-            loginError.textContent =
-                error.message || "Invalid email or password.";
+                loginError.textContent =
+                    error.message ||
+                    "Invalid email or password.";
 
-            return;
+                return;
+            }
+
+            currentUser = data.user;
+
+            await loadUserProfile();
         }
-
-        currentUser = data.user;
-
-        await loadUserProfile();
-    });
+    );
 }
 
 
@@ -158,91 +259,95 @@ async function loadUserProfile() {
         return;
     }
 
-    console.log("Logged-in user ID:", currentUser.id);
-    console.log("Logged-in email:", currentUser.email);
-
-    const { data, error } = await supabaseClient
-        .from("profiles")
-        .select("id, full_name, role")
-        .eq("id", currentUser.id)
-        .maybeSingle();
-
-    console.log("Profile data:", data);
-    console.log("Profile error:", error);
-
-    if (error) {
-
-        console.error("PROFILE QUERY FAILED:", error);
-
-        alert(
-            "Profile query failed:\n\n" +
-            error.message
-        );
-
-        await supabaseClient.auth.signOut();
-
+    if (profileLoading) {
         return;
     }
 
-    if (!data) {
-
-        console.error(
-            "No profile found for UUID:",
-            currentUser.id
-        );
-
-        alert(
-            "No profile was found for this account.\n\n" +
-            "User ID:\n" +
-            currentUser.id
-        );
-
-        await supabaseClient.auth.signOut();
-
-        return;
-    }
-
-    currentProfile = data;
+    profileLoading = true;
 
     console.log(
-        "Profile loaded successfully:",
-        currentProfile
+        "Logged-in user ID:",
+        currentUser.id
     );
 
-    userName.textContent = currentProfile.full_name;
-    userRole.textContent = currentProfile.role.toUpperCase();
+    console.log(
+        "Logged-in email:",
+        currentUser.email
+    );
 
-    loginPage.classList.add("hidden");
-    appPage.classList.remove("hidden");
+    try {
 
+        const {
+            data: profile,
+            error
+        } = await supabaseClient
+            .from("profiles")
+            .select("id, full_name, role")
+            .eq("id", currentUser.id)
+            .maybeSingle();
 
-    // --------------------------------------------------------
-    // EMPLOYEE
-    // --------------------------------------------------------
+        console.log(
+            "Profile data:",
+            profile
+        );
 
-    if (currentProfile.role === "employee") {
+        console.log(
+            "Profile error:",
+            error
+        );
 
-        employeeSection.classList.remove("hidden");
-        ownerSection.classList.add("hidden");
+        if (error) {
 
-        await loadMyTasks();
+            console.error(
+                "Profile query failed:",
+                error
+            );
 
-        return;
-    }
+            showLogin();
 
+            loginError.textContent =
+                "Unable to load your account profile.";
 
-    // --------------------------------------------------------
-    // OWNER
-    // --------------------------------------------------------
+            return;
+        }
 
-    if (currentProfile.role === "owner") {
+        if (!profile) {
 
-        employeeSection.classList.add("hidden");
-        ownerSection.classList.remove("hidden");
+            console.error(
+                "No profile found for:",
+                currentUser.id
+            );
 
-        await loadEmployees();
+            showLogin();
 
-        return;
+            loginError.textContent =
+                "Your account exists but no profile has been created.";
+
+            return;
+        }
+
+        currentProfile = profile;
+
+        console.log(
+            "Profile loaded successfully:",
+            profile
+        );
+
+        showApplication();
+
+    } catch (error) {
+
+        console.error(
+            "Unexpected profile error:",
+            error
+        );
+
+        showLogin();
+
+    } finally {
+
+        profileLoading = false;
+
     }
 }
 
@@ -260,6 +365,54 @@ function showLogin() {
     if (appPage) {
         appPage.classList.add("hidden");
     }
+
+}
+
+
+// ============================================================
+// SHOW APPLICATION
+// ============================================================
+
+async function showApplication() {
+
+    if (loginPage) {
+        loginPage.classList.add("hidden");
+    }
+
+    if (appPage) {
+        appPage.classList.remove("hidden");
+    }
+
+    if (userName) {
+        userName.textContent =
+            currentProfile.full_name;
+    }
+
+    if (userRole) {
+        userRole.textContent =
+            currentProfile.role === "owner"
+                ? "Owner"
+                : "Employee";
+    }
+
+
+    if (currentProfile.role === "owner") {
+
+        employeeSection.classList.add("hidden");
+
+        ownerSection.classList.remove("hidden");
+
+        await loadEmployees();
+
+    } else {
+
+        ownerSection.classList.add("hidden");
+
+        employeeSection.classList.remove("hidden");
+
+        await loadEmployeeTasks();
+
+    }
 }
 
 
@@ -269,616 +422,132 @@ function showLogin() {
 
 if (logoutBtn) {
 
-    logoutBtn.addEventListener("click", async () => {
+    logoutBtn.addEventListener(
+        "click",
+        async () => {
 
-        await supabaseClient.auth.signOut();
+            try {
 
-        currentUser = null;
-        currentProfile = null;
-        currentTasks = [];
-        selectedEmployee = null;
-    });
-}
+                await supabaseClient.auth.signOut();
 
+            } catch (error) {
 
-// ============================================================
-// ============================================================
-// WORKING DAY / OVERDUE LOGIC
-// ============================================================
-// ============================================================
+                console.error(
+                    "Logout error:",
+                    error
+                );
 
-/*
-    WORKING DAYS:
+            }
 
-    Monday      = Working
-    Tuesday     = Working
-    Wednesday   = Working
-    Thursday    = Working
-    Friday      = Working
-
-    Saturday:
-        1st Saturday = Non-working
-        2nd Saturday = Working
-        3rd Saturday = Non-working
-        4th Saturday = Working
-        5th Saturday = Non-working
-
-    Sunday = Non-working
-*/
-
-
-// ------------------------------------------------------------
-// CHECK IF DATE IS A WORKING DAY
-// ------------------------------------------------------------
-
-function isWorkingDay(date) {
-
-    const day = date.getDay();
-
-    // Monday - Friday
-    if (day >= 1 && day <= 5) {
-        return true;
-    }
-
-    // Sunday
-    if (day === 0) {
-        return false;
-    }
-
-    // Saturday
-    if (day === 6) {
-
-        const dateOfMonth = date.getDate();
-
-        // 1st, 2nd, 3rd, 4th or 5th Saturday
-        const saturdayNumber =
-            Math.ceil(dateOfMonth / 7);
-
-        // Only 2nd and 4th Saturday are working
-        return (
-            saturdayNumber === 2 ||
-            saturdayNumber === 4
-        );
-    }
-
-    return false;
-}
-
-
-// ------------------------------------------------------------
-// COUNT WORKING DAYS SINCE TASK DATE
-// ------------------------------------------------------------
-
-function getWorkingDaysPending(taskDateString) {
-
-    const taskDate =
-        new Date(taskDateString + "T00:00:00");
-
-    const today = new Date();
-
-    taskDate.setHours(0, 0, 0, 0);
-    today.setHours(0, 0, 0, 0);
-
-    let currentDate = new Date(taskDate);
-
-    let workingDays = 0;
-
-    // Start counting from the day AFTER the task date
-    currentDate.setDate(
-        currentDate.getDate() + 1
-    );
-
-    while (currentDate <= today) {
-
-        if (isWorkingDay(currentDate)) {
-            workingDays++;
         }
-
-        currentDate.setDate(
-            currentDate.getDate() + 1
-        );
-    }
-
-    return workingDays;
-}
-
-
-// ------------------------------------------------------------
-// CHECK IF TASK IS OVERDUE
-// ------------------------------------------------------------
-
-function isTaskOverdue(task) {
-
-    // Completed tasks are never overdue
-    if (task.completed) {
-        return false;
-    }
-
-    const workingDaysPending =
-        getWorkingDaysPending(task.task_date);
-
-    return workingDaysPending >= 3;
-}
-
-
-// ============================================================
-// TASK STATUS HELPERS
-// ============================================================
-
-function getTaskStatus(task) {
-
-    if (task.completed) {
-        return "completed";
-    }
-
-    if (isTaskOverdue(task)) {
-        return "overdue";
-    }
-
-    return "pending";
-}
-
-
-// ============================================================
-// EMPLOYEE - LOAD MY TASKS
-// ============================================================
-
-async function loadMyTasks() {
-
-    const { data, error } = await supabaseClient
-        .from("tasks")
-        .select("*")
-        .eq("user_id", currentUser.id)
-        .order("task_date", {
-            ascending: false
-        })
-        .order("created_at", {
-            ascending: true
-        });
-
-    if (error) {
-
-        console.error("Error loading tasks:", error);
-
-        myTasksContainer.innerHTML = `
-            <p class="error-message">
-                Unable to load your tasks.
-            </p>
-        `;
-
-        return;
-    }
-
-    currentTasks = data || [];
-
-    renderTasks(
-        currentTasks,
-        myTasksContainer,
-        true
     );
 }
 
 
 // ============================================================
-// RENDER TASKS
+// TASK MODAL - EMPLOYEE
 // ============================================================
 
-function renderTasks(
-    tasks,
-    container,
-    allowCompletion
-) {
+function openTaskModal() {
 
-    container.innerHTML = "";
-
-    if (!tasks || tasks.length === 0) {
-
-        container.innerHTML = `
-            <div class="empty-state">
-                <p>No tasks found.</p>
-            </div>
-        `;
-
+    if (!taskModal) {
+        console.error("taskModal not found.");
         return;
     }
 
+    taskModal.classList.remove("hidden");
 
-    // --------------------------------------------------------
-    // GROUP TASKS BY DATE
-    // --------------------------------------------------------
+    if (taskDateInput) {
+        taskDateInput.value =
+            getTodayString();
+    }
 
-    const groupedTasks = {};
+    if (taskTitleInput) {
+        taskTitleInput.value = "";
+        taskTitleInput.focus();
+    }
+}
 
-    tasks.forEach(task => {
 
-        if (!groupedTasks[task.task_date]) {
-            groupedTasks[task.task_date] = [];
-        }
+function closeTaskModal() {
 
-        groupedTasks[task.task_date].push(task);
-    });
+    if (!taskModal) {
+        return;
+    }
 
+    taskModal.classList.add("hidden");
 
-    // --------------------------------------------------------
-    // SORT DATES - NEWEST FIRST
-    // --------------------------------------------------------
+    if (taskForm) {
+        taskForm.reset();
+    }
 
-    const sortedDates =
-        Object.keys(groupedTasks).sort(
-            (a, b) =>
-                new Date(b) - new Date(a)
-        );
-
-
-    sortedDates.forEach(date => {
-
-        const dayCard =
-            document.createElement("div");
-
-        dayCard.className = "task-day-card";
-
-
-        // ----------------------------------------------------
-        // DATE HEADER
-        // ----------------------------------------------------
-
-        const dateHeader =
-            document.createElement("div");
-
-        dateHeader.className = "task-day-header";
-
-        dateHeader.textContent =
-            formatDate(date);
-
-        dayCard.appendChild(dateHeader);
-
-
-        // ----------------------------------------------------
-        // SORT TASKS
-        // ----------------------------------------------------
-        // Pending + overdue first
-        // Completed tasks afterwards
-        // ----------------------------------------------------
-
-        const sortedTasks =
-            groupedTasks[date].sort((a, b) => {
-
-                const aCompleted =
-                    a.completed;
-
-                const bCompleted =
-                    b.completed;
-
-                if (aCompleted && !bCompleted) {
-                    return 1;
-                }
-
-                if (!aCompleted && bCompleted) {
-                    return -1;
-                }
-
-                return (
-                    new Date(a.created_at) -
-                    new Date(b.created_at)
-                );
-            });
-
-
-        // ----------------------------------------------------
-        // RENDER EACH TASK
-        // ----------------------------------------------------
-
-        sortedTasks.forEach(task => {
-
-            const overdue =
-                isTaskOverdue(task);
-
-            const status =
-                getTaskStatus(task);
-
-
-            const taskItem =
-                document.createElement("div");
-
-            taskItem.className =
-                "task-item";
-
-
-            // ------------------------------------------------
-            // ADD STATUS CLASS
-            // ------------------------------------------------
-
-            if (task.completed) {
-
-                taskItem.classList.add(
-                    "completed"
-                );
-
-            } else if (overdue) {
-
-                taskItem.classList.add(
-                    "overdue"
-                );
-            }
-
-
-            // ------------------------------------------------
-            // TASK CONTENT
-            // ------------------------------------------------
-
-            const taskContent =
-                document.createElement("div");
-
-            taskContent.className =
-                "task-content";
-
-
-            // ------------------------------------------------
-            // CHECKBOX
-            // ------------------------------------------------
-
-            const checkbox =
-                document.createElement("input");
-
-            checkbox.type = "checkbox";
-
-            checkbox.checked =
-                task.completed;
-
-
-            // Overdue tasks cannot be completed
-            if (overdue && !task.completed) {
-
-                checkbox.disabled = true;
-
-                checkbox.title =
-                    "This task can no longer be completed because it has been pending for 3 working days.";
-            }
-
-
-            // Only allow completion when permitted
-            if (
-                allowCompletion &&
-                !task.completed &&
-                !overdue
-            ) {
-
-                checkbox.addEventListener(
-                    "change",
-                    () => {
-                        toggleTask(
-                            task.id,
-                            checkbox.checked
-                        );
-                    }
-                );
-
-            } else {
-
-                checkbox.disabled = true;
-            }
-
-
-            // ------------------------------------------------
-            // TASK TITLE
-            // ------------------------------------------------
-
-            const title =
-                document.createElement("span");
-
-            title.className =
-                "task-title";
-
-            title.textContent =
-                task.title;
-
-
-            // ------------------------------------------------
-            // OVERDUE LABEL
-            // ------------------------------------------------
-
-            if (overdue) {
-
-                const overdueLabel =
-                    document.createElement("span");
-
-                overdueLabel.className =
-                    "overdue-label";
-
-                overdueLabel.textContent =
-                    "OVERDUE";
-
-                title.appendChild(
-                    document.createTextNode(" ")
-                );
-
-                title.appendChild(
-                    overdueLabel
-                );
-            }
-
-
-            taskContent.appendChild(
-                checkbox
-            );
-
-            taskContent.appendChild(
-                title
-            );
-
-
-            // ------------------------------------------------
-            // TASK META
-            // ------------------------------------------------
-
-            const taskMeta =
-                document.createElement("div");
-
-            taskMeta.className =
-                "task-meta";
-
-
-            if (overdue) {
-
-                const workingDays =
-                    getWorkingDaysPending(
-                        task.task_date
-                    );
-
-                taskMeta.textContent =
-                    `${workingDays} working days pending`;
-
-            } else if (task.completed) {
-
-                taskMeta.textContent =
-                    "Completed";
-
-            } else {
-
-                taskMeta.textContent =
-                    "Pending";
-            }
-
-
-            taskItem.appendChild(
-                taskContent
-            );
-
-            taskItem.appendChild(
-                taskMeta
-            );
-
-
-            dayCard.appendChild(
-                taskItem
-            );
-        });
-
-
-        container.appendChild(
-            dayCard
-        );
-    });
+    if (taskDateInput) {
+        taskDateInput.value =
+            getTodayString();
+    }
 }
 
 
 // ============================================================
-// TOGGLE TASK COMPLETION
+// TASK MODAL - OWNER
 // ============================================================
 
-async function toggleTask(
-    taskId,
-    completed
-) {
+function openOwnerTaskModal() {
 
-    // Find task from currently loaded tasks
-    const task =
-        currentTasks.find(
-            t => t.id === taskId
-        );
-
-
-    if (!task) {
-
-        console.error(
-            "Task not found:",
-            taskId
-        );
-
-        return;
-    }
-
-
-    // --------------------------------------------------------
-    // IMPORTANT:
-    // Prevent overdue tasks from being completed.
-    // --------------------------------------------------------
-
-    if (
-        completed &&
-        isTaskOverdue(task)
-    ) {
+    if (!selectedEmployee) {
 
         alert(
-            "This task has been pending for 3 working days and can no longer be marked as complete."
+            "Please select an employee first."
         );
 
         return;
     }
 
-
-    const { error } =
-        await supabaseClient
-            .from("tasks")
-            .update({
-                completed: completed,
-                completed_at: completed
-                    ? new Date().toISOString()
-                    : null
-            })
-            .eq("id", taskId);
-
-
-    if (error) {
-
+    if (!ownerTaskModal) {
         console.error(
-            "Error updating task:",
-            error
-        );
-
-        alert(
-            "Unable to update task."
+            "ownerTaskModal not found."
         );
 
         return;
     }
 
+    ownerTaskModal.classList.remove("hidden");
 
-    await loadMyTasks();
+    if (ownerTaskDateInput) {
+
+        ownerTaskDateInput.value =
+            getTodayString();
+
+    }
+
+    if (ownerTaskTitleInput) {
+
+        ownerTaskTitleInput.value = "";
+
+        ownerTaskTitleInput.focus();
+
+    }
 }
 
 
-// ============================================================
-// EMPLOYEE - OPEN ADD TASK MODAL
-// ============================================================
+function closeOwnerTaskModal() {
 
-const addTaskBtn =
-    document.getElementById("addTaskBtn");
+    if (!ownerTaskModal) {
+        return;
+    }
 
-if (addTaskBtn) {
+    ownerTaskModal.classList.add("hidden");
 
-    addTaskBtn.addEventListener(
-        "click",
-        () => {
+    if (ownerTaskForm) {
+        ownerTaskForm.reset();
+    }
 
-            taskTitleInput.value = "";
+    if (ownerTaskDateInput) {
 
-            taskDateInput.value =
-                getTodayDate();
+        ownerTaskDateInput.value =
+            getTodayString();
 
-            taskModal.classList.remove(
-                "hidden"
-            );
-        }
-    );
-}
-
-
-// ============================================================
-// EMPLOYEE - CLOSE TASK MODAL
-// ============================================================
-
-if (closeModalBtn) {
-
-    closeModalBtn.addEventListener(
-        "click",
-        () => {
-
-            taskModal.classList.add(
-                "hidden"
-            );
-        }
-    );
+    }
 }
 
 
@@ -890,18 +559,26 @@ if (taskForm) {
 
     taskForm.addEventListener(
         "submit",
-        async event => {
+        async (event) => {
 
             event.preventDefault();
+
+            if (!currentUser) {
+
+                alert(
+                    "You are not logged in."
+                );
+
+                return;
+            }
 
             const title =
                 taskTitleInput.value.trim();
 
-            const date =
+            const taskDate =
                 taskDateInput.value;
 
-
-            if (!title || !date) {
+            if (!title || !taskDate) {
 
                 alert(
                     "Please enter a task and date."
@@ -910,42 +587,229 @@ if (taskForm) {
                 return;
             }
 
+            const submitButton =
+                taskForm.querySelector(
+                    'button[type="submit"]'
+                );
 
-            const { error } =
-                await supabaseClient
+            if (submitButton) {
+                submitButton.disabled = true;
+                submitButton.textContent =
+                    "Adding...";
+            }
+
+            try {
+
+                const {
+                    error
+                } = await supabaseClient
                     .from("tasks")
                     .insert({
                         user_id: currentUser.id,
                         title: title,
-                        task_date: date,
+                        task_date: taskDate,
                         completed: false,
+                        completed_at: null,
                         created_by: currentUser.id
                     });
 
+                if (error) {
 
-            if (error) {
+                    console.error(
+                        "Add task error:",
+                        error
+                    );
+
+                    alert(
+                        "Could not add task:\n" +
+                        error.message
+                    );
+
+                    return;
+                }
+
+                closeTaskModal();
+
+                await loadEmployeeTasks();
+
+            } catch (error) {
 
                 console.error(
-                    "Error adding task:",
+                    "Unexpected add task error:",
                     error
                 );
 
                 alert(
-                    "Unable to add task."
+                    "Something went wrong while adding the task."
                 );
 
-                return;
+            } finally {
+
+                if (submitButton) {
+
+                    submitButton.disabled =
+                        false;
+
+                    submitButton.textContent =
+                        "Add Task";
+
+                }
+
             }
-
-
-            taskModal.classList.add(
-                "hidden"
-            );
-
-
-            await loadMyTasks();
         }
     );
+}
+
+
+// ============================================================
+// EMPLOYEE - LOAD TASKS
+// ============================================================
+
+async function loadEmployeeTasks() {
+
+    if (!currentUser) {
+        return;
+    }
+
+    if (!myTasksContainer) {
+        return;
+    }
+
+    myTasksContainer.innerHTML =
+        "<p>Loading tasks...</p>";
+
+    try {
+
+        const {
+            data: tasks,
+            error
+        } = await supabaseClient
+            .from("tasks")
+            .select("*")
+            .eq("user_id", currentUser.id)
+            .order("task_date", {
+                ascending: false
+            })
+            .order("created_at", {
+                ascending: false
+            });
+
+        if (error) {
+
+            console.error(
+                "Load employee tasks error:",
+                error
+            );
+
+            myTasksContainer.innerHTML =
+                `<p class="error-message">
+                    Could not load tasks: ${escapeHtml(error.message)}
+                </p>`;
+
+            return;
+        }
+
+        currentTasks = tasks || [];
+
+        renderTasks(
+            currentTasks,
+            myTasksContainer
+        );
+
+    } catch (error) {
+
+        console.error(
+            "Unexpected task loading error:",
+            error
+        );
+
+        myTasksContainer.innerHTML =
+            `<p class="error-message">
+                Could not load tasks.
+            </p>`;
+
+    }
+}
+
+
+// ============================================================
+// EMPLOYEE - TOGGLE TASK
+// ============================================================
+
+async function toggleTask(
+    taskId,
+    completed
+) {
+
+    const task =
+        currentTasks.find(
+            item => String(item.id) === String(taskId)
+        );
+
+    if (!task) {
+
+        console.error(
+            "Task not found:",
+            taskId
+        );
+
+        return;
+    }
+
+    // Overdue tasks cannot be completed.
+    if (
+        !task.completed &&
+        isTaskOverdue(task)
+    ) {
+
+        alert(
+            "This task is overdue and cannot be marked as completed."
+        );
+
+        return;
+    }
+
+    try {
+
+        const {
+            error
+        } = await supabaseClient
+            .from("tasks")
+            .update({
+                completed: completed,
+                completed_at:
+                    completed
+                        ? new Date().toISOString()
+                        : null
+            })
+            .eq("id", task.id)
+            .eq("user_id", currentUser.id);
+
+        if (error) {
+
+            console.error(
+                "Toggle task error:",
+                error
+            );
+
+            alert(
+                "Could not update task:\n" +
+                error.message
+            );
+
+            return;
+        }
+
+        await loadEmployeeTasks();
+
+    } catch (error) {
+
+        console.error(
+            "Unexpected toggle error:",
+            error
+        );
+
+    }
 }
 
 
@@ -955,41 +819,59 @@ if (taskForm) {
 
 async function loadEmployees() {
 
-    const { data, error } =
-        await supabaseClient
+    if (!employeeList) {
+        return;
+    }
+
+    employeeList.innerHTML =
+        "<p>Loading employees...</p>";
+
+    try {
+
+        const {
+            data: employees,
+            error
+        } = await supabaseClient
             .from("profiles")
-            .select(
-                "id, full_name, role"
-            )
+            .select("id, full_name, role")
             .eq("role", "employee")
             .order("full_name", {
                 ascending: true
             });
 
+        if (error) {
 
-    if (error) {
+            console.error(
+                "Load employees error:",
+                error
+            );
+
+            employeeList.innerHTML =
+                `<p class="error-message">
+                    Could not load employees.
+                </p>`;
+
+            return;
+        }
+
+        ownerEmployees =
+            employees || [];
+
+        renderEmployees(
+            ownerEmployees
+        );
+
+    } catch (error) {
 
         console.error(
-            "Error loading employees:",
+            "Unexpected employee loading error:",
             error
         );
 
-        employeeList.innerHTML = `
-            <p class="error-message">
-                Unable to load employees.
-            </p>
-        `;
+        employeeList.innerHTML =
+            "<p>Could not load employees.</p>";
 
-        return;
     }
-
-
-    ownerEmployees =
-        data || [];
-
-    renderEmployees(
-        ownerEmployees
-    );
 }
 
 
@@ -1001,54 +883,38 @@ function renderEmployees(
     employees
 ) {
 
-    employeeList.innerHTML = "";
-
+    if (!employeeList) {
+        return;
+    }
 
     if (!employees.length) {
 
-        employeeList.innerHTML = `
-            <p class="empty-state">
-                No employees found.
-            </p>
-        `;
+        employeeList.innerHTML =
+            "<p>No employees found.</p>";
 
         return;
     }
 
+    employeeList.innerHTML =
+        employees
+            .map(employee => {
 
-    employees.forEach(employee => {
+                const selected =
+                    selectedEmployee &&
+                    selectedEmployee.id === employee.id;
 
-        const employeeItem =
-            document.createElement("button");
+                return `
+                    <button
+                        type="button"
+                        class="employee-item ${selected ? "active" : ""}"
+                        onclick="selectEmployee('${employee.id}')"
+                    >
+                        ${escapeHtml(employee.full_name)}
+                    </button>
+                `;
 
-        employeeItem.className =
-            "employee-item";
-
-        employeeItem.textContent =
-            employee.full_name;
-
-
-        employeeItem.addEventListener(
-            "click",
-            async () => {
-
-                selectedEmployee =
-                    employee;
-
-                selectedEmployeeName.textContent =
-                    employee.full_name;
-
-                await loadEmployeeTasks(
-                    employee.id
-                );
-            }
-        );
-
-
-        employeeList.appendChild(
-            employeeItem
-        );
-    });
+            })
+            .join("");
 }
 
 
@@ -1067,7 +933,6 @@ if (employeeSearch) {
                     .trim()
                     .toLowerCase();
 
-
             const filtered =
                 ownerEmployees.filter(
                     employee =>
@@ -1076,25 +941,108 @@ if (employeeSearch) {
                             .includes(search)
                 );
 
+            renderEmployees(filtered);
 
-            renderEmployees(
-                filtered
-            );
         }
     );
 }
 
 
 // ============================================================
-// OWNER - LOAD EMPLOYEE TASKS
+// OWNER - SELECT EMPLOYEE
 // ============================================================
 
-async function loadEmployeeTasks(
+async function selectEmployee(
     employeeId
 ) {
 
-    const { data, error } =
-        await supabaseClient
+    const employee =
+        ownerEmployees.find(
+            item => item.id === employeeId
+        );
+
+    if (!employee) {
+        return;
+    }
+
+    selectedEmployee = employee;
+
+    renderEmployees(
+        getFilteredEmployees()
+    );
+
+    if (selectedEmployeeHeader) {
+
+        selectedEmployeeHeader.innerHTML = `
+            <h2>
+                ${escapeHtml(employee.full_name)}
+            </h2>
+            <p>
+                View and manage this employee's tasks.
+            </p>
+        `;
+
+    }
+
+    if (ownerAddTaskButton) {
+        ownerAddTaskButton.classList.remove("hidden");
+    }
+
+    await loadOwnerTasks(
+        employee.id
+    );
+}
+
+
+// ============================================================
+// OWNER - FILTERED EMPLOYEES
+// ============================================================
+
+function getFilteredEmployees() {
+
+    if (!employeeSearch) {
+        return ownerEmployees;
+    }
+
+    const search =
+        employeeSearch.value
+            .trim()
+            .toLowerCase();
+
+    if (!search) {
+        return ownerEmployees;
+    }
+
+    return ownerEmployees.filter(
+        employee =>
+            employee.full_name
+                .toLowerCase()
+                .includes(search)
+    );
+}
+
+
+// ============================================================
+// OWNER - LOAD TASKS
+// ============================================================
+
+async function loadOwnerTasks(
+    employeeId
+) {
+
+    if (!ownerTasksContainer) {
+        return;
+    }
+
+    ownerTasksContainer.innerHTML =
+        "<p>Loading tasks...</p>";
+
+    try {
+
+        const {
+            data: tasks,
+            error
+        } = await supabaseClient
             .from("tasks")
             .select("*")
             .eq("user_id", employeeId)
@@ -1102,103 +1050,65 @@ async function loadEmployeeTasks(
                 ascending: false
             })
             .order("created_at", {
-                ascending: true
+                ascending: false
             });
 
+        if (error) {
 
-    if (error) {
+            console.error(
+                "Load owner tasks error:",
+                error
+            );
+
+            ownerTasksContainer.innerHTML =
+                `<p class="error-message">
+                    Could not load tasks:
+                    ${escapeHtml(error.message)}
+                </p>`;
+
+            return;
+        }
+
+        renderTasks(
+            tasks || [],
+            ownerTasksContainer,
+            true
+        );
+
+    } catch (error) {
 
         console.error(
-            "Error loading employee tasks:",
+            "Unexpected owner task error:",
             error
         );
 
-        ownerTasksContainer.innerHTML = `
-            <p class="error-message">
-                Unable to load employee tasks.
-            </p>
-        `;
+        ownerTasksContainer.innerHTML =
+            "<p>Could not load tasks.</p>";
 
-        return;
     }
-
-
-    renderTasks(
-        data || [],
-        ownerTasksContainer,
-        false
-    );
 }
 
 
 // ============================================================
-// OWNER - OPEN ADD TASK MODAL
-// ============================================================
-
-const addOwnerTaskBtn =
-    document.getElementById(
-        "addOwnerTaskBtn"
-    );
-
-if (addOwnerTaskBtn) {
-
-    addOwnerTaskBtn.addEventListener(
-        "click",
-        () => {
-
-            if (!selectedEmployee) {
-
-                alert(
-                    "Please select an employee first."
-                );
-
-                return;
-            }
-
-
-            ownerTaskTitleInput.value = "";
-
-            ownerTaskDateInput.value =
-                getTodayDate();
-
-            ownerTaskModal.classList.remove(
-                "hidden"
-            );
-        }
-    );
-}
-
-
-// ============================================================
-// OWNER - CLOSE ADD TASK MODAL
-// ============================================================
-
-if (closeOwnerModalBtn) {
-
-    closeOwnerModalBtn.addEventListener(
-        "click",
-        () => {
-
-            ownerTaskModal.classList.add(
-                "hidden"
-            );
-        }
-    );
-}
-
-
-// ============================================================
-// OWNER - ADD TASK FOR EMPLOYEE
+// OWNER - ADD TASK
 // ============================================================
 
 if (ownerTaskForm) {
 
     ownerTaskForm.addEventListener(
         "submit",
-        async event => {
+        async (event) => {
 
             event.preventDefault();
 
+            if (!currentUser) {
+
+                alert(
+                    "You are not logged in."
+                );
+
+                return;
+            }
 
             if (!selectedEmployee) {
 
@@ -1209,15 +1119,13 @@ if (ownerTaskForm) {
                 return;
             }
 
-
             const title =
                 ownerTaskTitleInput.value.trim();
 
-            const date =
+            const taskDate =
                 ownerTaskDateInput.value;
 
-
-            if (!title || !date) {
+            if (!title || !taskDate) {
 
                 alert(
                     "Please enter a task and date."
@@ -1226,9 +1134,26 @@ if (ownerTaskForm) {
                 return;
             }
 
+            const submitButton =
+                ownerTaskForm.querySelector(
+                    'button[type="submit"]'
+                );
 
-            const { error } =
-                await supabaseClient
+            if (submitButton) {
+
+                submitButton.disabled =
+                    true;
+
+                submitButton.textContent =
+                    "Adding...";
+
+            }
+
+            try {
+
+                const {
+                    error
+                } = await supabaseClient
                     .from("tasks")
                     .insert({
                         user_id:
@@ -1238,64 +1163,561 @@ if (ownerTaskForm) {
                             title,
 
                         task_date:
-                            date,
+                            taskDate,
 
                         completed:
                             false,
+
+                        completed_at:
+                            null,
 
                         created_by:
                             currentUser.id
                     });
 
+                if (error) {
 
-            if (error) {
+                    console.error(
+                        "Owner add task error:",
+                        error
+                    );
+
+                    alert(
+                        "Could not add task:\n" +
+                        error.message
+                    );
+
+                    return;
+                }
+
+                closeOwnerTaskModal();
+
+                await loadOwnerTasks(
+                    selectedEmployee.id
+                );
+
+            } catch (error) {
 
                 console.error(
-                    "Error adding owner task:",
+                    "Unexpected owner add task error:",
                     error
                 );
 
                 alert(
-                    "Unable to add task."
+                    "Something went wrong while adding the task."
                 );
 
-                return;
+            } finally {
+
+                if (submitButton) {
+
+                    submitButton.disabled =
+                        false;
+
+                    submitButton.textContent =
+                        "Add Task";
+
+                }
+
             }
 
-
-            ownerTaskModal.classList.add(
-                "hidden"
-            );
-
-
-            await loadEmployeeTasks(
-                selectedEmployee.id
-            );
         }
     );
 }
 
 
 // ============================================================
-// FORMAT DATE
+// RENDER TASKS
+// ============================================================
+
+function renderTasks(
+    tasks,
+    container,
+    ownerView = false
+) {
+
+    if (!container) {
+        return;
+    }
+
+    if (!tasks || !tasks.length) {
+
+        container.innerHTML =
+            `
+            <div class="empty-state">
+                <p>No tasks found.</p>
+            </div>
+            `;
+
+        return;
+    }
+
+    // Separate pending and completed tasks.
+    const pendingTasks =
+        tasks.filter(
+            task => !task.completed
+        );
+
+    const completedTasks =
+        tasks.filter(
+            task => task.completed
+        );
+
+    // Sort pending tasks:
+    // newest date first.
+    pendingTasks.sort(
+        (a, b) =>
+            new Date(b.task_date) -
+            new Date(a.task_date)
+    );
+
+    // Completed tasks remain below pending.
+    completedTasks.sort(
+        (a, b) =>
+            new Date(b.task_date) -
+            new Date(a.task_date)
+    );
+
+    const orderedTasks = [
+        ...pendingTasks,
+        ...completedTasks
+    ];
+
+    container.innerHTML =
+        orderedTasks
+            .map(task =>
+                createTaskHTML(
+                    task,
+                    ownerView
+                )
+            )
+            .join("");
+}
+
+
+// ============================================================
+// CREATE TASK HTML
+// ============================================================
+
+function createTaskHTML(
+    task,
+    ownerView = false
+) {
+
+    const overdue =
+        !task.completed &&
+        isTaskOverdue(task);
+
+    const completedClass =
+        task.completed
+            ? "completed"
+            : "";
+
+    const overdueClass =
+        overdue
+            ? "overdue"
+            : "";
+
+    const workingDays =
+        !task.completed
+            ? getWorkingDaysPending(
+                task.task_date
+            )
+            : 0;
+
+    let statusHTML = "";
+
+    if (overdue) {
+
+        statusHTML = `
+            <span class="overdue-label">
+                OVERDUE
+            </span>
+        `;
+
+    }
+
+    const checkboxDisabled =
+        overdue
+            ? "disabled"
+            : "";
+
+    const checked =
+        task.completed
+            ? "checked"
+            : "";
+
+    return `
+        <div
+            class="task-item ${completedClass} ${overdueClass}"
+            data-task-id="${task.id}"
+        >
+
+            <div class="task-checkbox-wrapper">
+
+                <input
+                    type="checkbox"
+                    class="task-checkbox"
+                    ${checked}
+                    ${checkboxDisabled}
+                    onchange="toggleTaskFromUI(
+                        '${task.id}',
+                        this.checked,
+                        ${ownerView}
+                    )"
+                >
+
+            </div>
+
+            <div class="task-content">
+
+                <div class="task-title">
+                    ${escapeHtml(task.title)}
+                    ${statusHTML}
+                </div>
+
+                <div class="task-date">
+                    ${formatDate(task.task_date)}
+
+                    ${
+                        overdue
+                            ? `
+                                <span class="overdue-days">
+                                    (${workingDays}
+                                    working days pending)
+                                </span>
+                            `
+                            : ""
+                    }
+                </div>
+
+            </div>
+
+        </div>
+    `;
+}
+
+
+// ============================================================
+// TASK UI HANDLER
+// ============================================================
+
+async function toggleTaskFromUI(
+    taskId,
+    completed,
+    ownerView
+) {
+
+    if (ownerView) {
+
+        await ownerToggleTask(
+            taskId,
+            completed
+        );
+
+    } else {
+
+        await toggleTask(
+            taskId,
+            completed
+        );
+
+    }
+}
+
+
+// ============================================================
+// OWNER - TOGGLE TASK
+// ============================================================
+
+async function ownerToggleTask(
+    taskId,
+    completed
+) {
+
+    const taskElement =
+        document.querySelector(
+            `[data-task-id="${taskId}"]`
+        );
+
+    try {
+
+        const {
+            data: task,
+            error: fetchError
+        } = await supabaseClient
+            .from("tasks")
+            .select("*")
+            .eq("id", taskId)
+            .maybeSingle();
+
+        if (fetchError) {
+
+            console.error(
+                "Owner task fetch error:",
+                fetchError
+            );
+
+            return;
+        }
+
+        if (!task) {
+            return;
+        }
+
+        // Overdue tasks cannot be completed.
+        if (
+            !task.completed &&
+            isTaskOverdue(task)
+        ) {
+
+            alert(
+                "This task is overdue and cannot be marked as completed."
+            );
+
+            if (taskElement) {
+
+                const checkbox =
+                    taskElement.querySelector(
+                        ".task-checkbox"
+                    );
+
+                if (checkbox) {
+                    checkbox.checked = false;
+                }
+
+            }
+
+            return;
+        }
+
+        const {
+            error
+        } = await supabaseClient
+            .from("tasks")
+            .update({
+                completed:
+                    completed,
+
+                completed_at:
+                    completed
+                        ? new Date().toISOString()
+                        : null
+            })
+            .eq("id", taskId);
+
+        if (error) {
+
+            console.error(
+                "Owner toggle task error:",
+                error
+            );
+
+            alert(
+                "Could not update task:\n" +
+                error.message
+            );
+
+            return;
+        }
+
+        if (selectedEmployee) {
+
+            await loadOwnerTasks(
+                selectedEmployee.id
+            );
+
+        }
+
+    } catch (error) {
+
+        console.error(
+            "Unexpected owner toggle error:",
+            error
+        );
+
+    }
+}
+
+
+// ============================================================
+// WORKING DAY LOGIC
+// ============================================================
+//
+// Working days:
+// Monday-Friday = working
+// 2nd Saturday = working
+// 4th Saturday = working
+// Sunday = non-working
+// 1st Saturday = non-working
+// 3rd Saturday = non-working
+// 5th Saturday = non-working
+//
+// A task becomes overdue after 3 working days
+// have elapsed AFTER the task date.
+// ============================================================
+
+function isWorkingDay(date) {
+
+    const day =
+        date.getDay();
+
+    // Monday-Friday
+    if (
+        day >= 1 &&
+        day <= 5
+    ) {
+
+        return true;
+    }
+
+    // Sunday
+    if (day === 0) {
+
+        return false;
+    }
+
+    // Saturday
+    if (day === 6) {
+
+        const saturdayNumber =
+            Math.ceil(
+                date.getDate() / 7
+            );
+
+        return (
+            saturdayNumber === 2 ||
+            saturdayNumber === 4
+        );
+    }
+
+    return false;
+}
+
+
+// ============================================================
+// COUNT WORKING DAYS PENDING
+// ============================================================
+
+function getWorkingDaysPending(
+    taskDateString
+) {
+
+    if (!taskDateString) {
+        return 0;
+    }
+
+    const taskDate =
+        new Date(
+            taskDateString +
+            "T00:00:00"
+        );
+
+    const today =
+        new Date();
+
+    taskDate.setHours(
+        0,
+        0,
+        0,
+        0
+    );
+
+    today.setHours(
+        0,
+        0,
+        0,
+        0
+    );
+
+    // Future task
+    if (taskDate > today) {
+        return 0;
+    }
+
+    let currentDate =
+        new Date(taskDate);
+
+    let workingDays = 0;
+
+    // Do NOT count task date itself.
+    currentDate.setDate(
+        currentDate.getDate() + 1
+    );
+
+    while (
+        currentDate <= today
+    ) {
+
+        if (
+            isWorkingDay(
+                currentDate
+            )
+        ) {
+
+            workingDays++;
+
+        }
+
+        currentDate.setDate(
+            currentDate.getDate() + 1
+        );
+    }
+
+    return workingDays;
+}
+
+
+// ============================================================
+// CHECK OVERDUE
+// ============================================================
+
+function isTaskOverdue(task) {
+
+    if (!task) {
+        return false;
+    }
+
+    if (task.completed) {
+        return false;
+    }
+
+    const workingDays =
+        getWorkingDaysPending(
+            task.task_date
+        );
+
+    return workingDays >= 3;
+}
+
+
+// ============================================================
+// DATE FORMATTING
 // ============================================================
 
 function formatDate(
     dateString
 ) {
 
+    if (!dateString) {
+        return "";
+    }
+
     const date =
         new Date(
-            dateString + "T00:00:00"
+            dateString +
+            "T00:00:00"
         );
 
+    if (Number.isNaN(date.getTime())) {
+        return dateString;
+    }
 
     return date.toLocaleDateString(
         "en-GB",
         {
-            weekday: "long",
-            day: "numeric",
-            month: "long",
+            day: "2-digit",
+            month: "short",
             year: "numeric"
         }
     );
@@ -1303,30 +1725,26 @@ function formatDate(
 
 
 // ============================================================
-// GET TODAY'S DATE
+// GET TODAY
 // ============================================================
 
-function getTodayDate() {
+function getTodayString() {
 
     const today =
         new Date();
 
-
     const year =
         today.getFullYear();
-
 
     const month =
         String(
             today.getMonth() + 1
         ).padStart(2, "0");
 
-
     const day =
         String(
             today.getDate()
         ).padStart(2, "0");
-
 
     return `${year}-${month}-${day}`;
 }
@@ -1340,12 +1758,14 @@ function escapeHtml(
     value
 ) {
 
-    if (value === null ||
-        value === undefined) {
+    if (
+        value === null ||
+        value === undefined
+    ) {
 
         return "";
-    }
 
+    }
 
     return String(value)
         .replace(
@@ -1369,3 +1789,75 @@ function escapeHtml(
             "&#039;"
         );
 }
+
+
+// ============================================================
+// CLOSE MODALS WHEN CLICKING OUTSIDE
+// ============================================================
+
+if (taskModal) {
+
+    taskModal.addEventListener(
+        "click",
+        (event) => {
+
+            if (
+                event.target === taskModal
+            ) {
+
+                closeTaskModal();
+
+            }
+
+        }
+    );
+
+}
+
+
+if (ownerTaskModal) {
+
+    ownerTaskModal.addEventListener(
+        "click",
+        (event) => {
+
+            if (
+                event.target === ownerTaskModal
+            ) {
+
+                closeOwnerTaskModal();
+
+            }
+
+        }
+    );
+
+}
+
+
+// ============================================================
+// ESC KEY CLOSES MODALS
+// ============================================================
+
+document.addEventListener(
+    "keydown",
+    (event) => {
+
+        if (event.key !== "Escape") {
+            return;
+        }
+
+        closeTaskModal();
+        closeOwnerTaskModal();
+
+    }
+);
+
+
+// ============================================================
+// DEBUG HELPERS
+// ============================================================
+
+console.log(
+    "TaskFlow JavaScript initialized successfully."
+);
